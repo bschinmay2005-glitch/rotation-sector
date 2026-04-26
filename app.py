@@ -4,16 +4,16 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 
 # -------------------------------
-# CONFIG
+# PAGE CONFIG
 # -------------------------------
 st.set_page_config(page_title="NSE Sector Dashboard", layout="wide")
-st.title("📊 NSE Sector Performance")
+st.title("📊 NSE Sectoral Indices Dashboard")
 
 # Auto refresh every 5 seconds
 st_autorefresh(interval=5000, key="refresh")
 
 # -------------------------------
-# SESSION SETUP
+# NSE SESSION SETUP
 # -------------------------------
 @st.cache_resource
 def get_session():
@@ -31,44 +31,67 @@ session, headers = get_session()
 # -------------------------------
 # FETCH ALL INDICES
 # -------------------------------
-def fetch_sector_data():
+def fetch_indices():
     url = "https://www.nseindia.com/api/allIndices"
-
     try:
         response = session.get(url, headers=headers, timeout=5)
         data = response.json()
     except:
-        # Retry if blocked
+        # retry if blocked
         session.get("https://www.nseindia.com", headers=headers)
         response = session.get(url, headers=headers, timeout=5)
         data = response.json()
 
-    df = pd.DataFrame(data["data"])
-    return df
+    return pd.DataFrame(data["data"])
+
+df = fetch_indices()
 
 # -------------------------------
-# FILTER SECTOR INDICES ONLY
+# EXACT SECTORAL INDICES LIST
 # -------------------------------
-df = fetch_sector_data()
-
-sector_keywords = [
-    "BANK", "IT", "FMCG", "AUTO", "PHARMA",
-    "METAL", "ENERGY", "REALTY", "MEDIA",
-    "FINANCIAL", "PSU"
+SECTOR_INDICES = [
+    "NIFTY AUTO",
+    "NIFTY IT",
+    "NIFTY PSU BANK",
+    "NIFTY FINANCIAL SERVICES",
+    "NIFTY PHARMA",
+    "NIFTY FMCG",
+    "NIFTY METAL",
+    "NIFTY REALTY",
+    "NIFTY MEDIA",
+    "NIFTY ENERGY",
+    "NIFTY PRIVATE BANK",
+    "NIFTY INFRASTRUCTURE",
+    "NIFTY COMMODITIES",
+    "NIFTY CONSUMPTION",
+    "NIFTY PSE",
+    "NIFTY SERVICES SECTOR",
+    "NIFTY FIN SERVICE 25/50",
+    "NIFTY CONSUMER DURABLES",
+    "NIFTY HEALTHCARE INDEX",
+    "NIFTY OIL & GAS",
+    "NIFTY INDIA MANUFACTURING",
+    "NIFTY INDIA DEFENCE"
 ]
 
-sector_df = df[df["index"].str.contains("|".join(sector_keywords), case=False)]
+# -------------------------------
+# FILTER ONLY REQUIRED INDICES
+# -------------------------------
+sector_df = df[df["index"].isin(SECTOR_INDICES)]
 
 # Keep only needed columns
 sector_df = sector_df[["index", "last", "percentChange"]]
 
-# -------------------------------
-# SORT (optional)
-# -------------------------------
-sector_df = sector_df.sort_values("percentChange", ascending=False)
+# Maintain your order
+sector_df["index"] = pd.Categorical(
+    sector_df["index"],
+    categories=SECTOR_INDICES,
+    ordered=True
+)
+sector_df = sector_df.sort_values("index")
 
 # -------------------------------
-# HEATMAP STYLE GRID
+# HEATMAP STYLE DISPLAY
 # -------------------------------
 st.subheader("📦 Sector Heatmap")
 
@@ -106,7 +129,7 @@ for i, row in sector_df.iterrows():
     )
 
 # -------------------------------
-# TABLE VIEW (optional)
+# TABLE VIEW (OPTIONAL)
 # -------------------------------
 st.subheader("📋 Sector Data Table")
 st.dataframe(sector_df)
