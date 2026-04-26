@@ -6,15 +6,14 @@ from streamlit_autorefresh import st_autorefresh
 # -------------------------------
 # CONFIG
 # -------------------------------
-st.set_page_config(page_title="NSE Heatmap", layout="wide")
+st.set_page_config(page_title="NSE Sector Dashboard", layout="wide")
+st.title("📊 NSE Sector Performance")
 
-st.title("📊 NSE Heatmap Dashboard")
-
-# Auto refresh every 5 sec
+# Auto refresh every 5 seconds
 st_autorefresh(interval=5000, key="refresh")
 
 # -------------------------------
-# SESSION SETUP (IMPORTANT)
+# SESSION SETUP
 # -------------------------------
 @st.cache_resource
 def get_session():
@@ -30,108 +29,84 @@ def get_session():
 session, headers = get_session()
 
 # -------------------------------
-# FETCH FUNCTION
+# FETCH ALL INDICES
 # -------------------------------
-def fetch_data(index_name):
-    url = f"https://www.nseindia.com/api/equity-stockIndices?index={index_name}"
+def fetch_sector_data():
+    url = "https://www.nseindia.com/api/allIndices"
+
     try:
         response = session.get(url, headers=headers, timeout=5)
         data = response.json()
-        return pd.DataFrame(data["data"])
     except:
-        # Retry once if blocked
+        # Retry if blocked
         session.get("https://www.nseindia.com", headers=headers)
         response = session.get(url, headers=headers, timeout=5)
         data = response.json()
-        return pd.DataFrame(data["data"])
+
+    df = pd.DataFrame(data["data"])
+    return df
 
 # -------------------------------
-# INDEX SELECTOR
+# FILTER SECTOR INDICES ONLY
 # -------------------------------
-indices = [
-    "NIFTY 50",
-    "NIFTY BANK",
-    "NIFTY IT",
-    "NIFTY FMCG",
-    "NIFTY AUTO",
-    "NIFTY PHARMA",
-    "NIFTY METAL",
-    "NIFTY ENERGY",
-    "NIFTY PSU BANK",
-    "NIFTY PRIVATE BANK"
+df = fetch_sector_data()
+
+sector_keywords = [
+    "BANK", "IT", "FMCG", "AUTO", "PHARMA",
+    "METAL", "ENERGY", "REALTY", "MEDIA",
+    "FINANCIAL", "PSU"
 ]
 
-index = st.selectbox("Select Index", indices)
+sector_df = df[df["index"].str.contains("|".join(sector_keywords), case=False)]
+
+# Keep only needed columns
+sector_df = sector_df[["index", "last", "percentChange"]]
 
 # -------------------------------
-# LOAD DATA
+# SORT (optional)
 # -------------------------------
-df = fetch_data(index)
-
-# Clean required columns
-df = df[["symbol", "lastPrice", "pChange"]]
+sector_df = sector_df.sort_values("percentChange", ascending=False)
 
 # -------------------------------
-# INDEX STRENGTH
+# HEATMAP STYLE GRID
 # -------------------------------
-avg_change = df["pChange"].mean()
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Index", index)
-col2.metric("Avg Change", f"{avg_change:.2f}%")
-col3.metric("Stocks", len(df))
-
-# -------------------------------
-# TOP MOVERS
-# -------------------------------
-gainers = df.sort_values("pChange", ascending=False).head(5)
-losers = df.sort_values("pChange").head(5)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("🚀 Top Gainers")
-    st.dataframe(gainers)
-
-with col2:
-    st.subheader("🔻 Top Losers")
-    st.dataframe(losers)
-
-# -------------------------------
-# HEATMAP GRID (CUSTOM)
-# -------------------------------
-st.subheader("📦 Heatmap View")
+st.subheader("📦 Sector Heatmap")
 
 def get_color(change):
     if change > 0:
-        intensity = min(abs(change) / 3, 1)
+        intensity = min(abs(change) / 2, 1)
         return f"rgba(0, 200, 0, {intensity})"
     else:
-        intensity = min(abs(change) / 3, 1)
+        intensity = min(abs(change) / 2, 1)
         return f"rgba(200, 0, 0, {intensity})"
 
-# Create grid
-cols = st.columns(6)
+cols = st.columns(4)
 
-for i, row in df.iterrows():
-    col = cols[i % 6]
-    color = get_color(row["pChange"])
+for i, row in sector_df.iterrows():
+    col = cols[i % 4]
+    color = get_color(row["percentChange"])
 
     col.markdown(
         f"""
         <div style="
             background-color:{color};
-            padding:10px;
-            margin:5px;
-            border-radius:8px;
+            padding:15px;
+            margin:10px;
+            border-radius:10px;
             text-align:center;
             color:white;
             font-weight:bold;
         ">
-            {row['symbol']}<br>
-            ₹{row['lastPrice']}<br>
-            {row['pChange']:.2f}%
+            {row['index']}<br>
+            {row['last']}<br>
+            {row['percentChange']:.2f}%
         </div>
         """,
         unsafe_allow_html=True
     )
+
+# -------------------------------
+# TABLE VIEW (optional)
+# -------------------------------
+st.subheader("📋 Sector Data Table")
+st.dataframe(sector_df)
