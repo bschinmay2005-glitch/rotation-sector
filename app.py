@@ -1,135 +1,116 @@
 import streamlit as st
-import requests
 import pandas as pd
-from streamlit_autorefresh import st_autorefresh
+import requests
+import time
+from datetime import datetime
+import plotly.express as px
+
+st.set_page_config(layout="wide")
 
 # -------------------------------
-# PAGE CONFIG
+# NSE DATA FETCH
 # -------------------------------
-st.set_page_config(page_title="NSE Sector Dashboard", layout="wide")
-st.title("📊 NSE Sectoral Indices Dashboard")
-
-# Auto refresh every 5 seconds
-st_autorefresh(interval=5000, key="refresh")
-
-# -------------------------------
-# NSE SESSION SETUP
-# -------------------------------
-@st.cache_resource
-def get_session():
-    session = requests.Session()
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.nseindia.com/"
-    }
-    session.get("https://www.nseindia.com", headers=headers)
-    return session, headers
-
-session, headers = get_session()
-
-# -------------------------------
-# FETCH ALL INDICES
-# -------------------------------
-def fetch_indices():
+def get_nse_data():
     url = "https://www.nseindia.com/api/allIndices"
-    try:
-        response = session.get(url, headers=headers, timeout=5)
-        data = response.json()
-    except:
-        # retry if blocked
-        session.get("https://www.nseindia.com", headers=headers)
-        response = session.get(url, headers=headers, timeout=5)
-        data = response.json()
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    session = requests.Session()
+    session.get("https://www.nseindia.com", headers=headers)
+    response = session.get(url, headers=headers)
+    data = response.json()["data"]
 
-    return pd.DataFrame(data["data"])
+    sector_list = [
+        "NIFTY AUTO","NIFTY IT","NIFTY PSU BANK","NIFTY FIN SERVICE",
+        "NIFTY PHARMA","NIFTY FMCG","NIFTY METAL","NIFTY REALTY",
+        "NIFTY MEDIA","NIFTY ENERGY","NIFTY PVT BANK","NIFTY INFRA",
+        "NIFTY COMMODITIES","NIFTY CONSUMPTION","NIFTY PSE",
+        "NIFTY SERVICES","NIFTY FINSRV25/50","NIFTY CONSUMER DURABLES",
+        "NIFTY HEALTHCARE","NIFTY OIL & GAS","NIFTY INDIA MFG",
+        "NIFTY INDIA DEFENCE"
+    ]
 
-df = fetch_indices()
+    df = pd.DataFrame(data)
+    df = df[df["index"].isin(sector_list)]
 
-# -------------------------------
-# EXACT SECTORAL INDICES LIST
-# -------------------------------
-SECTOR_INDICES = [
-    "NIFTY AUTO",
-    "NIFTY IT",
-    "NIFTY PSU BANK",
-    "NIFTY FINANCIAL SERVICES",
-    "NIFTY PHARMA",
-    "NIFTY FMCG",
-    "NIFTY METAL",
-    "NIFTY REALTY",
-    "NIFTY MEDIA",
-    "NIFTY ENERGY",
-    "NIFTY PRIVATE BANK",
-    "NIFTY INFRASTRUCTURE",
-    "NIFTY COMMODITIES",
-    "NIFTY CONSUMPTION",
-    "NIFTY PSE",
-    "NIFTY SERVICES SECTOR",
-    "NIFTY FIN SERVICE 25/50",
-    "NIFTY CONSUMER DURABLES",
-    "NIFTY HEALTHCARE INDEX",
-    "NIFTY OIL & GAS",
-    "NIFTY INDIA MANUFACTURING",
-    "NIFTY INDIA DEFENCE"
-]
+    return df[["index","last","percentChange"]]
+
 
 # -------------------------------
-# FILTER ONLY REQUIRED INDICES
+# STORAGE
 # -------------------------------
-sector_df = df[df["index"].isin(SECTOR_INDICES)]
+@st.cache_data(ttl=5)
+def fetch_and_store():
+    df = get_nse_data()
+    df["time"] = datetime.now()
+    return df
 
-# Keep only needed columns
-sector_df = sector_df[["index", "last", "percentChange"]]
-
-# Maintain your order
-sector_df["index"] = pd.Categorical(
-    sector_df["index"],
-    categories=SECTOR_INDICES,
-    ordered=True
-)
-sector_df = sector_df.sort_values("index")
 
 # -------------------------------
-# HEATMAP STYLE DISPLAY
+# UI
 # -------------------------------
-st.subheader("📦 Sector Heatmap")
+st.title("📊 Sector Heatmap + RRG")
 
-def get_color(change):
-    if change > 0:
-        intensity = min(abs(change) / 2, 1)
-        return f"rgba(0, 200, 0, {intensity})"
-    else:
-        intensity = min(abs(change) / 2, 1)
-        return f"rgba(200, 0, 0, {intensity})"
+mode = st.radio("Select View", ["Heatmap", "RRG"])
 
-cols = st.columns(4)
+data = fetch_and_store()
 
-for i, row in sector_df.iterrows():
-    col = cols[i % 4]
-    color = get_color(row["percentChange"])
+# -------------------------------
+# HEATMAP
+# -------------------------------
+if mode == "Heatmap":
+    st.subheader("Sector Heatmap")
 
-    col.markdown(
-        f"""
-        <div style="
-            background-color:{color};
-            padding:15px;
-            margin:10px;
-            border-radius:10px;
-            text-align:center;
-            color:white;
-            font-weight:bold;
-        ">
-            {row['index']}<br>
-            {row['last']}<br>
-            {row['percentChange']:.2f}%
-        </div>
-        """,
-        unsafe_allow_html=True
+    fig = px.treemap(
+        data,
+        path=["index"],
+        values="last",
+        color="percentChange",
+        color_continuous_scale="RdYlGn"
     )
 
+    st.plotly_chart(fig, use_container_width=True)
+
+
 # -------------------------------
-# TABLE VIEW (OPTIONAL)
+# RRG (Basic)
 # -------------------------------
-st.subheader("📋 Sector Data Table")
-st.dataframe(sector_df)
+else:
+    st.subheader("RRG (Intraday)")
+
+    st.warning("RRG improves as more data is collected")
+
+    if "history" not in st.session_state:
+        st.session_state.history = pd.DataFrame()
+
+    st.session_state.history = pd.concat(
+        [st.session_state.history, data],
+        ignore_index=True
+    )
+
+    history = st.session_state.history
+
+    if len(history) > 50:
+        pivot = history.pivot_table(
+            index="time",
+            columns="index",
+            values="last"
+        )
+
+        returns = pivot.pct_change().dropna()
+
+        latest = returns.tail(1).T.reset_index()
+        latest.columns = ["sector","momentum"]
+
+        latest["relative"] = latest["momentum"].rank()
+
+        fig = px.scatter(
+            latest,
+            x="relative",
+            y="momentum",
+            text="sector"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Collecting data... please wait")
