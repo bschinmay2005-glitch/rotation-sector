@@ -90,7 +90,7 @@ else:
 
     history = st.session_state.history
 
-    if len(history) > 50:
+    if len(history) > 5:
         pivot = history.pivot_table(
             index="time",
             columns="index",
